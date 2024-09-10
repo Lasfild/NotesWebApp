@@ -1,7 +1,9 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using NotesWebApp.Contracts;
 using NotesWebApp.DataAccess;
 using NotesWebApp.Models;
+using System.Linq.Expressions;
 
 namespace NotesWebApp.Controllers
 {
@@ -28,9 +30,28 @@ namespace NotesWebApp.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> Get()
+        public async Task<IActionResult> Get(GetNotesRequest request, CancellationToken ct)
         {
-            return Ok();
+            var notesQuerry = _dbContext.Notes
+                .Where(n => !string.IsNullOrWhiteSpace(request.Search) &&
+                            n.Title.ToLower().Contains(request.Search.ToLower()));
+
+            Expression<Func<Note, object>> selectorKey = request.SortItem?.ToLower() switch
+            {
+                "date" => note => note.CreatedAt,
+                "title" => note => note.Title,
+                _ => Note => Note.Id
+            };
+
+            notesQuerry = request.SortOrder == "desc"
+                ? notesQuerry.OrderByDescending(selectorKey)
+                : notesQuerry.OrderBy(selectorKey);
+
+            var noteDtos = await notesQuerry
+                .Select(n => new NoteDto(n.Id, n.Title, n.Description, n.CreatedAt))
+                .ToListAsync(cancellationToken: ct);
+
+            return Ok(new GetNotesResponse(noteDtos));
         }
     }
 }
